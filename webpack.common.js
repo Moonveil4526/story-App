@@ -40,11 +40,6 @@ module.exports = {
       skipWaiting: true,
 
       runtimeCaching: [
-        //
-        // ATURAN UNTUK 'story-api.dicoding.dev/stories'
-        // TELAH DIHAPUS DARI SINI UNTUK MEMPERBAIKI ERROR 405
-        //
-        
         {
           urlPattern: new RegExp('^https://fonts.googleapis.com/'),
           handler: 'CacheFirst',
