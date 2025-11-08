@@ -7,9 +7,16 @@ const Home = {
   async render() {
     return `
       <section id="story-list-section" class="mb-10">
-        <h2 class="text-3xl font-bold mb-6 border-b pb-2">Daftar Cerita Terbaru</h2>
+        <h2 class="text-3xl font-bold mb-6 border-b pb-2">Cerita Terbaru</h2>
         <div id="story-list" class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
           <p class="text-center col-span-full text-gray-500 p-8">Loading stories...</p>
+        </div>
+      </section>
+
+      <section id="bookmarked-story-section" class="mb-10 mt-10">
+        <h2 class="text-3xl font-bold mb-6 border-b pb-2">Cerita Favorit</h2>
+        <div id="bookmarked-story-list" class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+          <p class="text-center col-span-full text-gray-500 p-8">Memuat cerita tersimpan...</p>
         </div>
       </section>
       
@@ -21,37 +28,40 @@ const Home = {
   },
 
   async afterRender() {
-    const storyListContainer = document.getElementById('story-list');
-    
-    await this._renderFromIDB(storyListContainer);
+    await this._renderFromIDB();
 
-    await this._renderFromNetwork(storyListContainer);
+    
+    await this._renderFromNetwork();
   },
 
-  async _renderFromIDB(storyListContainer) {
+  
+  async _renderFromIDB() {
+    const bookmarkedListContainer = document.getElementById('bookmarked-story-list');
     try {
       const stories = await StoryIdb.getAllStories();
-      if (stories.length > 0) {
-        console.log('Menampilkan data dari IndexedDB');
-        this._renderStoryList(stories, storyListContainer);
-        this._initMap(stories);
-      }
+      console.log('Menampilkan data dari IndexedDB (Bookmark)');
+      
+      
+      this._renderStoryList(stories, bookmarkedListContainer, { isBookmarkedList: true });
+      
     } catch (error) {
       console.error('Gagal mengambil data dari IDB:', error);
+      bookmarkedListContainer.innerHTML = '<p class="text-center col-span-full text-gray-500 p-10">Gagal memuat cerita tersimpan.</p>';
     }
   },
 
-  async _renderFromNetwork(storyListContainer) {
+  
+  async _renderFromNetwork() {
+    const storyListContainer = document.getElementById('story-list');
     try {
       const stories = await API.getGuestStories(); 
       
       console.log('Menampilkan data dari Network');
-      this._renderStoryList(stories, storyListContainer); 
+      
+      this._renderStoryList(stories, storyListContainer, { isBookmarkedList: false });
+      
       this._initMap(stories); 
       
-      await StoryIdb.putAllStories(stories);
-      console.log('Data network berhasil disimpan ke IndexedDB');
-
     } catch (error) {
       console.error('Gagal mengambil data dari Network:', error);
       if (storyListContainer.innerHTML.includes('Loading stories...')) {
@@ -62,19 +72,31 @@ const Home = {
       }
     }
   },
-  _renderStoryList(stories, storyListContainer) {
+
+  _renderStoryList(stories, container, options = { isBookmarkedList: false }) {
     if (stories.length === 0) {
-      storyListContainer.innerHTML = `
-        <p class="text-center col-span-full text-gray-500 p-10">
-          Belum ada cerita terbaru. Silakan <a href="#/add" class="text-green-600 hover:underline font-semibold">tambahkan cerita</a> Anda setelah login!
-        </p>`;
+      container.innerHTML = `<p class="text-center col-span-full text-gray-500 p-10">${options.isBookmarkedList ? 'Belum ada cerita yang Anda simpan.' : 'Belum ada cerita terbaru.'}</p>`;
       return;
     }
 
-    storyListContainer.innerHTML = stories
+    container.innerHTML = stories
       .map((story) => {
         const photoUrl = story.photoUrl || story.photo || 'https://placehold.co/400x200/cccccc/333333?text=No+Image';
         const storyName = story.name || 'Untitled Story';
+
+        const actionButton = options.isBookmarkedList
+          ? `<button 
+               class="delete-button absolute top-2 right-2 bg-red-600 text-white w-8 h-8 rounded-full shadow-lg hover:bg-red-700 transition duration-200"
+               data-id="${story.id}" 
+               title="Hapus story dari daftar tersimpan">
+               &times;
+             </button>`
+          : `<button 
+               class="bookmark-button absolute top-2 right-2 bg-blue-600 text-white w-8 h-8 rounded-full shadow-lg hover:bg-blue-700 transition duration-200"
+               data-story='${JSON.stringify(story)}' 
+               title="Simpan story untuk offline">
+               &#43;
+             </button>`;
 
         return `
         <article class="bg-white rounded-xl shadow-lg overflow-hidden transition transform hover:shadow-xl duration-300 relative">
@@ -89,18 +111,18 @@ const Home = {
             <p class="text-xs text-gray-400">Lokasi: ${story.lat ? `${story.lat.toFixed(4)}, ${story.lon.toFixed(4)}` : 'N/A'}</p>
           </div>
           
-          <button 
-            class="delete-button absolute top-2 right-2 bg-red-600 text-white w-8 h-8 rounded-full shadow-lg hover:bg-red-700 transition duration-200"
-            data-id="${story.id}" 
-            title="Hapus story">
-            &times;
-          </button>
+          ${actionButton}
+
         </article>
       `;
       })
       .join('');
       
-    this._addDeleteListeners();
+    if (options.isBookmarkedList) {
+      this._addDeleteListeners(container.id);
+    } else {
+      this._addBookmarkListeners(container.id);
+    }
   },
 
   _initMap(stories) {
@@ -119,26 +141,11 @@ const Home = {
 
     const customIcon = L.icon({
       iconUrl: 'https://cdn.rawgit.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
-      iconSize: [25, 41],
-      iconAnchor: [12, 41],
-      popupAnchor: [1, -34],
-      shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
-      shadowSize: [41, 41],
     });
 
     let bounds = [];
     stories.forEach((story) => {
       if (story.lat && story.lon) {
-        const latLng = [story.lat, story.lon];
-        bounds.push(latLng);
-
-        L.marker(latLng, { icon: customIcon }).addTo(map).bindPopup(`
-          <div class="p-1 max-w-xs">
-            <strong class="text-md">${story.name || 'Story'}</strong><br>
-            <img src="${story.photoUrl || story.photo || 'https://placehold.co/100x75'}" alt="Foto ${story.name || 'Story'}" class="w-full h-auto mt-1 rounded">
-            <p class="text-xs mt-1">${(story.description || '').substring(0, 50)}...</p>
-          </div>
-        `);
       }
     });
 
@@ -147,41 +154,59 @@ const Home = {
     }
   },
 
-  _addDeleteListeners() {
-    const deleteButtons = document.querySelectorAll('.delete-button');
-    deleteButtons.forEach(button => {
-      const newButton = button.cloneNode(true);
-      button.parentNode.replaceChild(newButton, button);
+  _addBookmarkListeners(containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
 
-      newButton.addEventListener('click', async (event) => {
-        event.preventDefault();
-        event.stopPropagation();
+    container.addEventListener('click', async (event) => {
+      const button = event.target.closest('.bookmark-button');
+      if (!button) return;
+
+      try {
+        const storyData = JSON.parse(button.dataset.story);
+
+        await StoryIdb.putStory(storyData);
         
-        const id = event.target.closest('.delete-button').dataset.id;
+        alert(`Cerita "${storyData.name}" berhasil disimpan untuk mode offline!`);
         
-        if (!confirm('Apakah Anda yakin ingin menghapus story ini?')) {
-          return;
-        }
+        this._renderFromIDB();
 
-        try {
-          await StoryIdb.deleteStory(id);
-          console.log(`Story ${id} dihapus dari IndexedDB`);
-          try {
-            console.log(`Story ${id} dihapus dari API`);
-          } catch (apiError) {
-            console.warn('Gagal menghapus dari API. Mungkin sedang offline.', apiError);
-          }
+      } catch (error) {
+        console.error('Gagal menyimpan story ke IDB:', error);
+        alert('Gagal menyimpan cerita.');
+      }
+    });
+  },
+  
+  _addDeleteListeners(containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
 
-          alert('Story berhasil dihapus dari database lokal.');
-          
-          const storyListContainer = document.getElementById('story-list');
-          this._renderFromIDB(storyListContainer);
+    container.addEventListener('click', async (event) => {
+      const button = event.target.closest('.delete-button');
+      if (!button) return;
 
-        } catch (error) {
-          console.error('Gagal menghapus story:', error);
-          alert('Gagal menghapus story.');
-        }
-      });
+      event.preventDefault();
+      event.stopPropagation();
+      
+      const id = button.dataset.id;
+      
+      if (!confirm('Apakah Anda yakin ingin menghapus story ini dari daftar tersimpan?')) {
+        return;
+      }
+
+      try {
+        await StoryIdb.deleteStory(id);
+        console.log(`Story ${id} dihapus dari IndexedDB`);
+
+        alert('Story berhasil dihapus dari database lokal.');
+        
+        this._renderFromIDB();
+
+      } catch (error) {
+        console.error('Gagal menghapus story:', error);
+        alert('Gagal menghapus story.');
+      }
     });
   },
 };

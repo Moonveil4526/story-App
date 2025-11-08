@@ -1,8 +1,8 @@
 {
   "name": "Story App",
-  "short_name": "StoryApp",
+  "short_name": "Story App",
   "description": "Aplikasi PWA untuk berbagi cerita.",
-  "start_url": "/",
+  "start_url": "/story-App/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#007bff",
